@@ -1,0 +1,14 @@
+# Binaries — released via GitHub Releases, not in repo
+bin/
+*.bin
+
+# OS / IDE
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Build artifacts
+build/
+*.o
+*.tmp

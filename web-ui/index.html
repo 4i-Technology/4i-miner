@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiningPULT — 4i-Miner Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body>
+    <!-- ===== ZERO-CONFIG OVERLAY (shown if miner.configured === false) ===== -->
+    <div class="overlay" id="zero-config-overlay" style="display:none">
+        <div class="overlay-card">
+            <div class="overlay-logo">4i</div>
+            <h1 class="overlay-title">Добро пожаловать в 4i-Miner</h1>
+            <p class="overlay-subtitle">Настройте ферму за 10 секунд</p>
+            <div class="overlay-form">
+                <label>
+                    <span>Кошелёк ERG</span>
+                    <input type="text" id="cfg-wallet" placeholder="9hKNPA9xQuAHpo2Qe4rcYEEUtvfErXW72Xhfbgk8cF9upofgg1d">
+                </label>
+                <label>
+                    <span>Worker Name</span>
+                    <input type="text" id="cfg-worker" placeholder="MI300X-Rig1" value="MI300X-Rig1">
+                </label>
+                <label>
+                    <span>Пул</span>
+                    <select id="cfg-pool">
+                        <option value="ergo.herominers.com:1199">HeroMiners</option>
+                        <option value="woolypooly:3094">WoolyPooly</option>
+                        <option value="ergo.2miners.com:8888">2Miners</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Backup Pool (опционально)</span>
+                    <input type="text" id="cfg-backup" placeholder="woolypooly:3094">
+                </label>
+                <button id="cfg-start" class="overlay-btn">Start Mining →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== WATCHDOG TOAST ===== -->
+    <div class="toast" id="toast" style="display:none"></div>
+
+    <!-- ===== THERMAL MODAL ===== -->
+    <div class="modal" id="thermal-modal" style="display:none">
+        <div class="modal-card">
+            <h2>⚠️ CRITICAL: Hotspot overheating!</h2>
+            <p>Hotspot temperature exceeded 85°C.</p>
+            <p class="modal-action">Reducing Power Limit...</p>
+            <button onclick="document.getElementById('thermal-modal').style.display='none'" class="modal-btn">Acknowledge</button>
+        </div>
+    </div>
+
+    <!-- ===== ЗОНА A: HEADER ===== -->
+    <header class="header">
+        <div class="header-brand">
+            <span class="logo">4i</span>
+            <div class="brand-text">
+                <span class="brand-name">MiningPULT</span>
+                <span class="brand-version">v1.0 · 4i-CRYPTO</span>
+            </div>
+        </div>
+        <div class="header-actions">
+            <div class="connection-indicator" id="connection">
+                <span class="dot" id="conn-dot"></span>
+                <span id="conn-text">Online</span>
+            </div>
+            <button class="btn btn-share" id="btn-share">
+                <span>📷</span> Share Stats
+            </button>
+            <button class="btn btn-restart" id="btn-restart">
+                <span>⟳</span> <span id="restart-text">Restart</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ===== MAIN GRID ===== -->
+    <main class="grid">
+
+        <!-- ===== ЗОНА B: LEFT — Mining ===== -->
+        <section class="zone zone-mining">
+            <!-- Gauge -->
+            <div class="card card-gauge">
+                <div class="card-head"><h2>Hashrate</h2><span class="badge" id="gpu-name">AMD MI300X</span></div>
+                <div class="gauge-wrap">
+                    <canvas id="gauge" width="340" height="200"></canvas>
+                    <div class="gauge-value">
+                        <span id="gauge-mhs">0.00</span>
+                        <span class="gauge-suffix">MH/s</span>
+                    </div>
+                </div>
+                <div class="gauge-meta">
+                    <span>Peak: <strong id="gauge-peak">0.00</strong> MH/s</span>
+                    <span>Algo: <strong id="gauge-algo">autolykosv2</strong></span>
+                </div>
+            </div>
+
+            <!-- Live Chart -->
+            <div class="card card-chart">
+                <div class="card-head"><h2>Live Hashrate (60s)</h2><span class="badge" id="chart-points">0 pts</span></div>
+                <div class="chart-wrap"><canvas id="hashrate-chart"></canvas></div>
+            </div>
+
+            <!-- Shares -->
+            <div class="card card-shares">
+                <div class="card-head"><h2>Shares</h2><span class="badge" id="efficiency">100% Eff</span></div>
+                <div class="shares-grid">
+                    <div class="share-box accepted">
+                        <div class="share-label">Accepted</div>
+                        <div class="share-value" id="shares-accepted">0</div>
+                    </div>
+                    <div class="share-box rejected">
+                        <div class="share-label">Rejected</div>
+                        <div class="share-value" id="shares-rejected">0</div>
+                    </div>
+                </div>
+                <div class="efficiency-bar">
+                    <div class="efficiency-fill" id="efficiency-fill"></div>
+                </div>
+            </div>
+
+            <!-- Pool/Worker -->
+            <div class="card card-pool">
+                <div class="card-head"><h2>Pool & Worker</h2><span class="badge" id="pool-status">connected</span></div>
+                <div class="pool-rows">
+                    <div class="pool-row"><span>Pool:</span><strong id="pool-url">—</strong></div>
+                    <div class="pool-row"><span>Worker:</span><strong id="pool-worker">—</strong></div>
+                    <div class="pool-row"><span>Backup:</span><strong id="pool-backup">—</strong></div>
+                    <div class="pool-row"><span>Uptime:</span><strong id="pool-uptime">0s</strong></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== ЗОНА C: RIGHT — Economy & Telemetry ===== -->
+        <section class="zone zone-economy">
+            <!-- Profit Matrix -->
+            <div class="card card-profit">
+                <div class="card-head"><h2>Profit Matrix</h2><span class="badge">$ LIVE</span></div>
+                <div class="profit-inputs">
+                    <label>
+                        <span>Цена кВт/ч ($)</span>
+                        <input type="number" id="elec-price" value="0.05" step="0.01" min="0">
+                    </label>
+                    <label>
+                        <span>Цена ERG ($)</span>
+                        <input type="number" id="coin-price" value="1.00" step="0.01" min="0">
+                    </label>
+                </div>
+                <table class="profit-table">
+                    <thead>
+                        <tr><th></th><th>Day</th><th>Month</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Gross Revenue</td><td id="rev-day">$0.00</td><td id="rev-month">$0.00</td></tr>
+                        <tr><td>Electricity</td><td id="elec-day" class="cost">$0.00</td><td id="elec-month" class="cost">$0.00</td></tr>
+                        <tr class="net-row"><td>NET PROFIT</td><td id="net-day">$0.00</td><td id="net-month">$0.00</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- HUD Telemetry -->
+            <div class="card card-telemetry">
+                <div class="card-head"><h2>Telemetry HUD</h2></div>
+                <div class="telemetry-grid">
+                    <div class="tel-item">
+                        <div class="tel-bar">
+                            <div class="tel-fill" id="tel-gpu-temp" style="height:50%"></div>
+                        </div>
+                        <div class="tel-label">GPU Temp</div>
+                        <div class="tel-value" id="val-gpu-temp">— °C</div>
+                    </div>
+                    <div class="tel-item">
+                        <div class="tel-bar">
+                            <div class="tel-fill" id="tel-hotspot" style="height:50%"></div>
+                        </div>
+                        <div class="tel-label">Hotspot</div>
+                        <div class="tel-value" id="val-hotspot">— °C</div>
+                    </div>
+                    <div class="tel-item">
+                        <div class="tel-bar">
+                            <div class="tel-fill" id="tel-power" style="height:50%"></div>
+                        </div>
+                        <div class="tel-label">Power</div>
+                        <div class="tel-value" id="val-power">— W</div>
+                    </div>
+                    <div class="tel-item">
+                        <div class="tel-bar">
+                            <div class="tel-fill" id="tel-fan" style="height:50%"></div>
+                        </div>
+                        <div class="tel-label">Fan RPM</div>
+                        <div class="tel-value" id="val-fan">—</div>
+                    </div>
+                    <div class="tel-item">
+                        <div class="tel-bar">
+                            <div class="tel-fill" id="tel-vram" style="height:50%"></div>
+                        </div>
+                        <div class="tel-label">VRAM</div>
+                        <div class="tel-value" id="val-vram">— %</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===== ЗОНА D: STATUS BAR ===== -->
+    <footer class="statusbar">
+        <div class="devfee-gauge">
+            <span class="status-label">Dev Fee Cycle</span>
+            <div class="devfee-progress">
+                <div class="devfee-fill" id="devfee-fill"></div>
+            </div>
+            <span class="status-value" id="devfee-status">Mining to User</span>
+        </div>
+        <div class="watchdog-status">
+            <span class="shield" id="watchdog-icon">🛡</span>
+            <span class="status-label">Watchdog:</span>
+            <span class="status-value" id="watchdog-status">Armed</span>
+        </div>
+        <div class="footer-brand">
+            <span class="blink-dot"></span>
+            <span id="last-update">—</span>
+            <span class="ussr-mark">★ Made in USSR ★</span>
+        </div>
+    </footer>
+
+    <!-- Hidden dev fee banner (popup when active) -->
+    <div class="devfee-banner" id="devfee-banner" style="display:none"></div>
+
+    <!-- Live Console (compact, bottom) -->
+    <div class="console-strip" id="console-strip">
+        <div class="console-head">LIVE CONSOLE</div>
+        <div class="console-body" id="console-log"></div>
+    </div>
+
+    <script src="/script.js"></script>
+</body>
+</html>
