@@ -1,0 +1,304 @@
+name: Build Windows .exe
+
+# Триггеры:
+#   1. При публикации нового Release (тег v1.*) — собирает .exe и крепит к релизу
+#   2. Ручной запуск (workflow_dispatch) — для тестирования сборки
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to attach artifact (e.g. v1.2). Leave empty for test run.'
+        required: false
+        default: ''
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      # ─── 1. Checkout 4i-miner repo (kernels, web-ui, Dockerfile, README) ───
+      - name: Checkout 4i-miner repo
+        uses: actions/checkout@v4
+
+      # ─── 2. Setup MSVC + Windows SDK ───
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ─── 3. Install Chocolatey packages: cmake, git, ninja ───
+      - name: Install build tools (CMake, Git, Ninja)
+        shell: powershell
+        run: |
+          choco install cmake git ninja -y --no-progress
+          # Refresh PATH so cmake/ninja are available in subsequent steps
+          "C:\Program Files\CMake\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "C:\Program Files\Git\cmd" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      # ─── 4. Setup vcpkg (Microsoft's package manager for C++) ───
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '3b6fb68e7d851d8dd1c2ff57c313293e67ef649e'  # pin for reproducibility
+
+      # ─── 5. Install Boost + OpenCL + OpenSSL via vcpkg ───
+      - name: Install dependencies via vcpkg
+        shell: powershell
+        run: |
+          Write-Host "Installing Boost + OpenCL + OpenSSL via vcpkg (this takes ~15-25 min)..."
+          $packages = @(
+            'boost-asio',
+            'boost-beast',
+            'boost-system',
+            'boost-thread',
+            'boost-chrono',
+            'boost-filesystem',
+            'boost-program-options',
+            'boost-serialization',
+            'boost-json',
+            'boost-atomic',
+            'boost-container',
+            'boost-date-time',
+            'opencl',
+            'openssl',
+            'curl'
+          )
+          & vcpkg/vcpkg.exe install $packages --triplet x64-windows
+          & vcpkg/vcpkg.exe integrate install
+
+      # ─── 6. Download solo-miner source from Gitea (private repo) ───
+      # GITEA_TOKEN secret must be set in repo settings → Secrets and variables → Actions
+      - name: Download solo-miner source from Gitea
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$GITEA_TOKEN" ]; then
+            echo "❌ ERROR: GITEA_TOKEN secret is not set."
+            echo "   Ask Ataman to add it in:"
+            echo "   GitHub → 4i-Technology/4i-miner → Settings → Secrets and variables → Actions → New secret"
+            echo "   Name: GITEA_TOKEN"
+            echo "   Value: <Gitea access token from https://git.4i-tech.ru/user/settings/applications>"
+            exit 1
+          fi
+          echo "⬇ Downloading solo-miner tarball from Gitea..."
+          curl -sSL -H "Authorization: token $GITEA_TOKEN" \
+            "https://git.4i-tech.ru/Ataman/solo-miner/archive/main.tar.gz" \
+            -o solo-miner.tar.gz
+          mkdir -p solo-miner
+          tar xzf solo-miner.tar.gz -C solo-miner --strip-components=1
+          echo "✅ solo-miner source extracted"
+          ls solo-miner/4i-miner/
+
+      # ─── 7. Clone upstream luminousminer from GitHub (public) ───
+      - name: Clone upstream luminousminer
+        shell: bash
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/luminousmining/miner.git C:/luminousminer
+          ls C:/luminousminer/sources/ | head -10
+
+      # ─── 8. Apply 4i-Miner patches over upstream ───
+      - name: Apply 4i-Miner patches
+        shell: bash
+        run: |
+          set -e
+          LM_DIR="C:/luminousminer"
+          SRC_4I="solo-miner/4i-miner/sources"
+
+          # 3a. Patch boost.cmake — relax Boost version (vcpkg ships 1.84)
+          sed -i 's/find_package(Boost 1.91.0 EXACT COMPONENTS/find_package(Boost 1.84.0 COMPONENTS/' \
+            "$LM_DIR/cmake/deps/system/boost.cmake"
+          sed -i 's/^set(Boost_USE_STATIC_LIBS      ON)/set(Boost_USE_STATIC_LIBS      OFF)/' \
+            "$LM_DIR/cmake/deps/system/boost.cmake"
+
+          # 3b. Relax OpenSSL 1.1.1 → any (vcpkg ships OpenSSL 3)
+          sed -i 's/find_package(OpenSSL 1.1.1 REQUIRED/find_package(OpenSSL REQUIRED/' \
+            "$LM_DIR/cmake/deps/system/openssl.cmake"
+          sed -i 's/^set(OPENSSL_USE_STATIC_LIBS TRUE)/set(OPENSSL_USE_STATIC_LIBS FALSE)/' \
+            "$LM_DIR/cmake/deps/system/openssl.cmake"
+
+          # 3c. Toolchain: use MSVC (vcvarsall already set up)
+          # Replace clang-15 with empty (use default compiler)
+          if [ -f "$LM_DIR/cmake/toolchain/linux.cmake" ]; then
+            sed -i 's/"clang-15"/""/g; s/"clang++-15"/""/g' "$LM_DIR/cmake/toolchain/linux.cmake"
+          fi
+
+          # 3d. ADL header: __stdcall is Windows calling convention (no-op needed on Windows)
+          # Skip this patch on Windows — __stdcall is native there.
+
+          # 3e. Version: set 4i-Miner v1.1 (upstream ships v0.12)
+          APP_H="$LM_DIR/sources/common/app.hpp"
+          if [ -f "$APP_H" ] && ! grep -q "4i-Miner patch: version" "$APP_H"; then
+            sed -i 's/constexpr uint8_t VERSION_MAJOR{ 0 };/constexpr uint8_t VERSION_MAJOR{ 1 };/' "$APP_H"
+            sed -i 's/constexpr uint8_t VERSION_MINOR{ 12 };/constexpr uint8_t VERSION_MINOR{ 1 };/' "$APP_H"
+          fi
+
+          # 4. Apply 4i-Miner optimized sources over upstream tree
+          cp "$SRC_4I/autolykos_v2_search.cl"      "$LM_DIR/sources/algo/autolykos/opencl/"
+          cp "$SRC_4I/autolykos_v2_verify.cl"       "$LM_DIR/sources/algo/autolykos/opencl/"
+          cp "$SRC_4I/buffer_mapped.hpp"            "$LM_DIR/sources/common/opencl/"
+          cp "$SRC_4I/autolykos_v2_stratum.cpp"     "$LM_DIR/sources/stratum/autolykos_v2.cpp"
+          rm -f "$LM_DIR/sources/stratum/autolykos_v2_stratum.cpp"
+          cp "$SRC_4I/main.cpp"                     "$LM_DIR/sources/miner.cpp"
+
+          # 4i-Miner v1.1: TUI modules (Setup Wizard + Dashboard)
+          mkdir -p "$LM_DIR/sources/tui"
+          cp "$SRC_4I/tui/tui.hpp"                  "$LM_DIR/sources/tui/"
+          cp "$SRC_4I/tui/tui.cpp"                  "$LM_DIR/sources/tui/"
+
+          # 4i-Miner patch: replace upstream api.cpp with our extended version
+          cp "$SRC_4I/patches/api.cpp"              "$LM_DIR/sources/api/api.cpp"
+
+          # Stage web-ui/ + kernels/
+          mkdir -p "$LM_DIR/web-ui"
+          cp solo-miner/4i-miner/web-ui/*           "$LM_DIR/web-ui/"
+
+          # Stage kernel/ dir for JIT runtime compilation
+          mkdir -p "$LM_DIR/build/kernel/common" "$LM_DIR/build/kernel/crypto" "$LM_DIR/build/kernel/autolykos"
+          ln -sf "$LM_DIR/sources/common/opencl/rotate_byte.cl"            "$LM_DIR/build/kernel/common/" 2>/dev/null || cp "$LM_DIR/sources/common/opencl/rotate_byte.cl" "$LM_DIR/build/kernel/common/"
+          ln -sf "$LM_DIR/sources/algo/crypto/opencl/blake2b.cl"           "$LM_DIR/build/kernel/crypto/" 2>/dev/null || cp "$LM_DIR/sources/algo/crypto/opencl/blake2b.cl" "$LM_DIR/build/kernel/crypto/"
+          ln -sf "$LM_DIR/sources/algo/crypto/opencl/blake2b_compress.cl"  "$LM_DIR/build/kernel/crypto/" 2>/dev/null || cp "$LM_DIR/sources/algo/crypto/opencl/blake2b_compress.cl" "$LM_DIR/build/kernel/crypto/"
+          ln -sf "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_result.cl"      "$LM_DIR/build/kernel/autolykos/" 2>/dev/null || cp "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_result.cl" "$LM_DIR/build/kernel/autolykos/"
+          ln -sf "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_var_global.cl"  "$LM_DIR/build/kernel/autolykos/" 2>/dev/null || cp "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_var_global.cl" "$LM_DIR/build/kernel/autolykos/"
+          ln -sf "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_search.cl"      "$LM_DIR/build/kernel/autolykos/" 2>/dev/null || cp "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_search.cl" "$LM_DIR/build/kernel/autolykos/"
+          ln -sf "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_dag.cl"         "$LM_DIR/build/kernel/autolykos/" 2>/dev/null || cp "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_dag.cl" "$LM_DIR/build/kernel/autolykos/"
+          ln -sf "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_verify.cl"      "$LM_DIR/build/kernel/autolykos/" 2>/dev/null || cp "$LM_DIR/sources/algo/autolykos/opencl/autolykos_v2_verify.cl" "$LM_DIR/build/kernel/autolykos/"
+
+          echo "✅ All patches applied"
+
+      # ─── 9. Create tui/CMakeLists.txt (TUI files not in upstream CMake) ───
+      - name: Create tui/CMakeLists.txt + add_subdirectory
+        shell: bash
+        run: |
+          LM_DIR="C:/luminousminer"
+          cat > "$LM_DIR/sources/tui/CMakeLists.txt" << 'EOF'
+          file(GLOB HEADERS "*.hpp")
+          file(GLOB SOURCES "*.cpp")
+
+          if (BUILD_EXE_MINER)
+              target_sources(${MINER_EXE} PUBLIC
+                  ${HEADERS}
+                  ${SOURCES}
+              )
+          endif()
+
+          if (BUILD_EXE_UNIT_TEST)
+              target_sources(${UNIT_TEST_EXE} PUBLIC
+                  ${HEADERS}
+                  ${SOURCES}
+              )
+          endif()
+          EOF
+          # Add add_subdirectory(tui) to sources/CMakeLists.txt
+          if ! grep -q "add_subdirectory(tui)" "$LM_DIR/sources/CMakeLists.txt"; then
+            sed -i 's|add_subdirectory(stratum)|add_subdirectory(stratum)\nadd_subdirectory(tui)|' "$LM_DIR/sources/CMakeLists.txt"
+          fi
+
+      # ─── 10. Configure cmake (Visual Studio 17 2022 generator) ───
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          mkdir C:\luminousminer\build
+          cd C:\luminousminer\build
+          cmake -G "Visual Studio 17 2022" -A x64 ^
+                -DCMAKE_BUILD_TYPE=Release ^
+                -DBUILD_NVIDIA=OFF ^
+                -DBUILD_AMD=ON ^
+                -DBUILD_CPU=OFF ^
+                -DBUILD_EXE_MINER=ON ^
+                -DBUILD_EXE_UNIT_TEST=OFF ^
+                -DBUILD_EXE_BENCHMARK=OFF ^
+                -DUSE_VCPKG=OFF ^
+                -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+                -DVCPKG_TARGET_TRIPLET=x64-windows ^
+                ..
+
+      # ─── 11. Build with MSBuild ───
+      - name: Build 4i-miner.exe (MSBuild)
+        shell: cmd
+        run: |
+          cd C:\luminousminer\build
+          msbuild miner.sln /p:Configuration=Release /p:Platform=x64 /m:4
+
+      # ─── 12. Stage release (4i-miner.exe + kernels + web-ui) ───
+      - name: Stage release
+        shell: powershell
+        run: |
+          $stage = "C:\release-stage"
+          New-Item -ItemType Directory -Path "$stage\bin" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$stage\kernels\common" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$stage\kernels\crypto" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$stage\kernels\autolykos" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$stage\web-ui" -Force | Out-Null
+
+          # Binary
+          $exePath = Get-ChildItem -Path "C:\luminousminer\build" -Recurse -Filter "miner.exe" | Select-Object -First 1
+          if ($exePath) {
+            Copy-Item $exePath.FullName "$stage\bin\4i-miner.exe"
+            Write-Host "✅ Binary: $($exePath.FullName)"
+          } else {
+            Write-Host "❌ miner.exe not found!"
+            exit 1
+          }
+
+          # Kernels
+          Copy-Item "C:\luminousminer\build\kernel\common\*" "$stage\kernels\common\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "C:\luminousminer\build\kernel\crypto\*" "$stage\kernels\crypto\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "C:\luminousminer\build\kernel\autolykos\*" "$stage\kernels\autolykos\" -Recurse -ErrorAction SilentlyContinue
+
+          # Web UI
+          Copy-Item "C:\luminousminer\web-ui\*" "$stage\web-ui\" -Recurse
+
+          # README
+          Copy-Item "README.md" "$stage\"
+
+          Write-Host "=== Stage contents ==="
+          Get-ChildItem -Path $stage -Recurse | Format-Table FullName, Length
+
+      # ─── 13. Create ZIP archive ───
+      - name: Create ZIP archive
+        shell: powershell
+        run: |
+          $zipPath = "C:\4i-miner-windows-x64.zip"
+          Compress-Archive -Path "C:\release-stage\*" -DestinationPath $zipPath -Force
+          Write-Host "✅ ZIP created: $zipPath"
+          Get-Item $zipPath | Format-Table FullName, Length
+
+      # ─── 14. Upload build artifact (always) ───
+      - name: Upload ZIP as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 4i-miner-windows-x64
+          path: C:\4i-miner-windows-x64.zip
+          retention-days: 30
+
+      # ─── 15. Attach to GitHub Release (if triggered by release) ───
+      - name: Attach ZIP to Release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "Attaching ZIP to release: $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" "C:/4i-miner-windows-x64.zip" --clobber
+          echo "✅ Attached to release $RELEASE_TAG"
+
+      # ─── 16. Manual tag attach (workflow_dispatch with tag input) ───
+      - name: Attach ZIP to manual tag
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${{ github.event.inputs.tag }}"
+          echo "Attaching ZIP to tag: $TAG"
+          gh release upload "$TAG" "C:/4i-miner-windows-x64.zip" --clobber || \
+            echo "⚠️ Release $TAG not found — skipping attach (artifact still uploaded above)"
