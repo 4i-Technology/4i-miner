@@ -210,22 +210,65 @@ jobs:
           fi
 
       # ─── 10. Configure cmake (Visual Studio 17 2022 generator) ───
+      # Note: windows-latest runner has VS 2022 (17) AND VS 2025 (18) Preview.
+      # We use "Visual Studio 17 2022" explicitly (stable, well-tested).
+      # If runner only has VS 2025, fall back to "Visual Studio 18 2025".
       - name: Configure CMake
-        shell: cmd
+        shell: powershell
         run: |
-          if not exist "C:\luminousminer\build" mkdir "C:\luminousminer\build"
-          cd /d "C:\luminousminer\build"
-          cmake -G "Visual Studio 17 2022" -A x64 "C:\luminousminer" ^
-                -DCMAKE_BUILD_TYPE=Release ^
-                -DBUILD_NVIDIA=OFF ^
-                -DBUILD_AMD=ON ^
-                -DBUILD_CPU=OFF ^
-                -DBUILD_EXE_MINER=ON ^
-                -DBUILD_EXE_UNIT_TEST=OFF ^
-                -DBUILD_EXE_BENCHMARK=OFF ^
-                -DUSE_VCPKG=OFF ^
-                -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
-                -DVCPKG_TARGET_TRIPLET=x64-windows
+          if (Test-Path "C:\luminousminer\build") { Remove-Item -Recurse -Force "C:\luminousminer\build" }
+          New-Item -ItemType Directory -Path "C:\luminousminer\build" -Force | Out-Null
+          Set-Location "C:\luminousminer\build"
+
+          # Try VS 2022 first (stable)
+          $generator = "Visual Studio 17 2022"
+          Write-Host "Trying generator: $generator"
+          $proc = Start-Process -FilePath "cmake" -ArgumentList @(
+            "-G", $generator, "-A", "x64",
+            "C:\luminousminer",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_NVIDIA=OFF",
+            "-DBUILD_AMD=ON",
+            "-DBUILD_CPU=OFF",
+            "-DBUILD_EXE_MINER=ON",
+            "-DBUILD_EXE_UNIT_TEST=OFF",
+            "-DBUILD_EXE_BENCHMARK=OFF",
+            "-DUSE_VCPKG=OFF",
+            "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "-DVCPKG_TARGET_TRIPLET=x64-windows"
+          ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput "cmake_stdout.txt" -RedirectStandardError "cmake_stderr.txt"
+
+          if ($proc.ExitCode -ne 0) {
+            Write-Host "VS 2022 failed (exit $($proc.ExitCode)). Trying VS 2025 Preview..."
+            Get-Content "cmake_stderr.txt" -Tail 10 | Write-Host
+
+            $generator = "Visual Studio 18 2025"
+            $proc = Start-Process -FilePath "cmake" -ArgumentList @(
+              "-G", $generator, "-A", "x64",
+              "C:\luminousminer",
+              "-DCMAKE_BUILD_TYPE=Release",
+              "-DBUILD_NVIDIA=OFF",
+              "-DBUILD_AMD=ON",
+              "-DBUILD_CPU=OFF",
+              "-DBUILD_EXE_MINER=ON",
+              "-DBUILD_EXE_UNIT_TEST=OFF",
+              "-DBUILD_EXE_BENCHMARK=OFF",
+              "-DUSE_VCPKG=OFF",
+              "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+              "-DVCPKG_TARGET_TRIPLET=x64-windows"
+            ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput "cmake_stdout2.txt" -RedirectStandardError "cmake_stderr2.txt"
+          }
+
+          Write-Host "=== CMake stdout (last 30 lines) ==="
+          Get-Content "cmake_stdout.txt" -Tail 30 | Write-Host
+          Write-Host "=== CMake stderr (last 30 lines) ==="
+          Get-Content "cmake_stderr.txt" -Tail 30 | Write-Host
+
+          if ($proc.ExitCode -ne 0) {
+            Write-Host "❌ CMake configure failed with both VS 2022 and VS 2025"
+            exit 1
+          }
+          Write-Host "✅ CMake configure succeeded with generator: $generator"
 
       # ─── 11. Build with MSBuild ───
       - name: Build 4i-miner.exe (MSBuild)
