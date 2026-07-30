@@ -39,10 +39,20 @@ jobs:
           "C:\Program Files\Git\cmd" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       # ─── 4. Setup vcpkg (Microsoft's package manager for C++) ───
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: '3b6fb68e7d851d8dd1c2ff57c313293e67ef649e'  # pin for reproducibility
+      # Use the pre-installed vcpkg on GitHub Actions runners (C:\vcpkg)
+      # instead of cloning a pinned commit (which can 404 if SHA is invalid).
+      - name: Setup vcpkg (use pre-installed on runner)
+        shell: powershell
+        run: |
+          Write-Host "vcpkg location: C:\vcpkg"
+          if (!(Test-Path "C:\vcpkg\vcpkg.exe")) {
+            Write-Host "Building vcpkg.exe (first run)..."
+            & C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          }
+          & C:\vcpkg\vcpkg.exe version
+          "C:\vcpkg" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          # Echo vcpkg path for downstream steps
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
 
       # ─── 5. Install Boost + OpenCL + OpenSSL via vcpkg ───
       - name: Install dependencies via vcpkg
@@ -66,8 +76,8 @@ jobs:
             'openssl',
             'curl'
           )
-          & vcpkg/vcpkg.exe install $packages --triplet x64-windows
-          & vcpkg/vcpkg.exe integrate install
+          & vcpkg.exe install $packages --triplet x64-windows
+          & vcpkg.exe integrate install
 
       # ─── 6. Download solo-miner source from Gitea (private repo) ───
       # GITEA_TOKEN secret must be set in repo settings → Secrets and variables → Actions
