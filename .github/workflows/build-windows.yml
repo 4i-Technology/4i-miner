@@ -16,7 +16,7 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       # ─── 1. Checkout 4i-miner repo (kernels, web-ui, Dockerfile, README) ───
@@ -213,9 +213,9 @@ jobs:
       - name: Configure CMake
         shell: cmd
         run: |
-          mkdir C:\luminousminer\build
-          cd C:\luminousminer\build
-          cmake -G "Visual Studio 17 2022" -A x64 ^
+          if not exist "C:\luminousminer\build" mkdir "C:\luminousminer\build"
+          cd /d "C:\luminousminer\build"
+          cmake -G "Visual Studio 17 2022" -A x64 "C:\luminousminer" ^
                 -DCMAKE_BUILD_TYPE=Release ^
                 -DBUILD_NVIDIA=OFF ^
                 -DBUILD_AMD=ON ^
@@ -225,8 +225,7 @@ jobs:
                 -DBUILD_EXE_BENCHMARK=OFF ^
                 -DUSE_VCPKG=OFF ^
                 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
-                -DVCPKG_TARGET_TRIPLET=x64-windows ^
-                ..
+                -DVCPKG_TARGET_TRIPLET=x64-windows
 
       # ─── 11. Build with MSBuild ───
       - name: Build 4i-miner.exe (MSBuild)
