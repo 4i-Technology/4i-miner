@@ -73,4 +73,4 @@ The same 5-step Setup Wizard launches — no Docker required. Requires Linux x86
 
 ---
 
-*Built by solo engineers using AI agents. Powered by 4i-Technology.*
+*Built by a solo developer. Powered by 4i-Technology.*
