@@ -76,7 +76,7 @@ jobs:
             'openssl',
             'curl'
           )
-          & vcpkg.exe install $packages --triplet x64-windows-static
+          & vcpkg.exe install $packages --triplet x64-windows
           & vcpkg.exe integrate install
 
       # ─── 6. Download solo-miner source from Gitea (private repo) ───
@@ -212,9 +212,17 @@ jobs:
           # 🆕 Fix Boost.JSON dllimport error on Windows MSVC:
           # error C2491: 'boost::json::array::empty_': definition of dllimport
           # static data member not allowed.
-          # Fix: add BOOST_JSON_STATIC compile definition to CMakeLists.txt.
-          # (Can't pass via CMAKE_CXX_FLAGS=/DBOOST_JSON_STATIC because
-          #  Git Bash MSYS converts /D to C:/Program Files/Git/D path.)
+          # Fix: patch boost.cmake to remove BOOST_JSON_DYN_LINK definition.
+          # vcpkg builds Boost.Json as shared DLL → boost.cmake adds DYN_LINK →
+          # MSVC can't dllimport static data members → C2491.
+          # Remove BOOST_JSON_DYN_LINK so Boost.Json headers use inline (not dllimport).
+          if ! grep -q "4i-Miner patch: remove BOOST_JSON_DYN_LINK" "$LM_DIR/cmake/deps/system/boost.cmake"; then
+            sed -i 's/BOOST_JSON_DYN_LINK/BOOST_JSON_NO_DYN_LINK/g' "$LM_DIR/cmake/deps/system/boost.cmake"
+            echo '4i-Miner patch: remove BOOST_JSON_DYN_LINK' >> "$LM_DIR/cmake/deps/system/boost.cmake"
+            echo "Patched boost.cmake: BOOST_JSON_DYN_LINK → BOOST_JSON_NO_DYN_LINK"
+          fi
+
+          # Also add BOOST_JSON_STATIC to CMakeLists.txt (belt + suspenders)
           if ! grep -q "BOOST_JSON_STATIC" "$LM_DIR/CMakeLists.txt"; then
             sed -i '/^project(/a add_compile_definitions(BOOST_JSON_STATIC)' "$LM_DIR/CMakeLists.txt"
             echo "Added BOOST_JSON_STATIC to CMakeLists.txt"
@@ -240,7 +248,7 @@ jobs:
             -DBUILD_EXE_BENCHMARK=OFF \
             -DUSE_VCPKG=OFF \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static"
+            -DVCPKG_TARGET_TRIPLET=x64-windows"
 
           CONFIGURED=0
 
