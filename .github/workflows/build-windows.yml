@@ -217,8 +217,9 @@ jobs:
           # MSVC can't dllimport static data members → C2491.
           # Remove BOOST_JSON_DYN_LINK so Boost.Json headers use inline (not dllimport).
           if ! grep -q "4i-Miner patch: remove BOOST_JSON_DYN_LINK" "$LM_DIR/cmake/deps/system/boost.cmake"; then
-            sed -i 's/BOOST_JSON_DYN_LINK/BOOST_JSON_NO_DYN_LINK/g' "$LM_DIR/cmake/deps/system/boost.cmake"
-            echo '4i-Miner patch: remove BOOST_JSON_DYN_LINK' >> "$LM_DIR/cmake/deps/system/boost.cmake"
+            # Only replace actual defines, not comments
+            sed -i 's/-DBOOST_JSON_DYN_LINK/-DBOOST_JSON_NO_DYN_LINK/g' "$LM_DIR/cmake/deps/system/boost.cmake"
+            sed -i 's/set(Boost_USE_STATIC_LIBS      OFF)/set(Boost_USE_STATIC_LIBS      OFF)\n# 4i-Miner patch: remove BOOST_JSON_DYN_LINK/' "$LM_DIR/cmake/deps/system/boost.cmake"
             echo "Patched boost.cmake: BOOST_JSON_DYN_LINK → BOOST_JSON_NO_DYN_LINK"
           fi
 
