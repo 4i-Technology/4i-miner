@@ -209,6 +209,17 @@ jobs:
             sed -i 's|add_subdirectory(stratum)|add_subdirectory(stratum)\nadd_subdirectory(tui)|' "$LM_DIR/sources/CMakeLists.txt"
           fi
 
+          # 🆕 Fix Boost.JSON dllimport error on Windows MSVC:
+          # error C2491: 'boost::json::array::empty_': definition of dllimport
+          # static data member not allowed.
+          # Fix: add BOOST_JSON_STATIC compile definition to CMakeLists.txt.
+          # (Can't pass via CMAKE_CXX_FLAGS=/DBOOST_JSON_STATIC because
+          #  Git Bash MSYS converts /D to C:/Program Files/Git/D path.)
+          if ! grep -q "BOOST_JSON_STATIC" "$LM_DIR/CMakeLists.txt"; then
+            sed -i '/^project(/a add_compile_definitions(BOOST_JSON_STATIC)' "$LM_DIR/CMakeLists.txt"
+            echo "Added BOOST_JSON_STATIC to CMakeLists.txt"
+          fi
+
       # ─── 10. Configure cmake ───
       # Use bash (Git Bash) NOT powershell — PowerShell has $_ parsing bugs.
       # Try VS 2022 → VS 2025 → Ninja generators.
@@ -229,9 +240,7 @@ jobs:
             -DBUILD_EXE_BENCHMARK=OFF \
             -DUSE_VCPKG=OFF \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_TARGET_TRIPLET=x64-windows \
-            -DCMAKE_CXX_FLAGS=/DBOOST_JSON_STATIC \
-            -DCMAKE_CXX_FLAGS_RELEASE=/DBOOST_JSON_STATIC"
+            -DVCPKG_TARGET_TRIPLET=x64-windows"
 
           CONFIGURED=0
 
