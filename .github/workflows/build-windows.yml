@@ -209,10 +209,10 @@ jobs:
             sed -i 's|add_subdirectory(stratum)|add_subdirectory(stratum)\nadd_subdirectory(tui)|' "$LM_DIR/sources/CMakeLists.txt"
           fi
 
-      # ─── 10. Configure cmake (Visual Studio 17 2022 generator) ───
-      # Note: windows-latest runner has VS 2022 (17) AND VS 2025 (18) Preview.
-      # We use "Visual Studio 17 2022" explicitly (stable, well-tested).
-      # If runner only has VS 2025, fall back to "Visual Studio 18 2025".
+      # ─── 10. Configure cmake ───
+      # windows-latest has VS 2022 (17) AND VS 2025 (18) Preview.
+      # Try both generators. Use PowerShell call operator (&) NOT Start-Process
+      # (Start-Process splits "Visual Studio 17 2022" into separate args).
       - name: Configure CMake
         shell: powershell
         run: |
@@ -220,12 +220,7 @@ jobs:
           New-Item -ItemType Directory -Path "C:\luminousminer\build" -Force | Out-Null
           Set-Location "C:\luminousminer\build"
 
-          # Try VS 2022 first (stable)
-          $generator = "Visual Studio 17 2022"
-          Write-Host "Trying generator: $generator"
-          $proc = Start-Process -FilePath "cmake" -ArgumentList @(
-            "-G", $generator, "-A", "x64",
-            "C:\luminousminer",
+          $cmakeArgs = @(
             "-DCMAKE_BUILD_TYPE=Release",
             "-DBUILD_NVIDIA=OFF",
             "-DBUILD_AMD=ON",
@@ -236,46 +231,68 @@ jobs:
             "-DUSE_VCPKG=OFF",
             "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
             "-DVCPKG_TARGET_TRIPLET=x64-windows"
-          ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput "cmake_stdout.txt" -RedirectStandardError "cmake_stderr.txt"
+          )
 
-          if ($proc.ExitCode -ne 0) {
-            Write-Host "VS 2022 failed (exit $($proc.ExitCode)). Trying VS 2025 Preview..."
-            Get-Content "cmake_stderr.txt" -Tail 10 | Write-Host
+          # Try VS 2022 first, then VS 2025
+          $generators = @("Visual Studio 17 2022", "Visual Studio 18 2025")
+          $configured = $false
 
-            $generator = "Visual Studio 18 2025"
-            $proc = Start-Process -FilePath "cmake" -ArgumentList @(
-              "-G", $generator, "-A", "x64",
-              "C:\luminousminer",
-              "-DCMAKE_BUILD_TYPE=Release",
-              "-DBUILD_NVIDIA=OFF",
-              "-DBUILD_AMD=ON",
-              "-DBUILD_CPU=OFF",
-              "-DBUILD_EXE_MINER=ON",
-              "-DBUILD_EXE_UNIT_TEST=OFF",
-              "-DBUILD_EXE_BENCHMARK=OFF",
-              "-DUSE_VCPKG=OFF",
-              "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
-              "-DVCPKG_TARGET_TRIPLET=x64-windows"
-            ) -NoNewWindow -Wait -PassThru -RedirectStandardOutput "cmake_stdout2.txt" -RedirectStandardError "cmake_stderr2.txt"
+          foreach ($gen in $generators) {
+            Write-Host "=== Trying generator: $gen ==="
+            try {
+              & cmake -G $gen -A x64 "C:\luminousminer" @cmakeArgs 2>&1 | Tee-Object -FilePath "cmake_output.txt"
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ CMake configure succeeded with: $gen"
+                $configured = $true
+                break
+              } else {
+                Write-Host "⚠️ Generator $gen failed (exit $LASTEXITCODE)"
+                # Clean build dir for next attempt
+                Remove-Item -Recurse -Force "C:\luminousminer\build\*" -ErrorAction SilentlyContinue
+              }
+            } catch {
+              Write-Host "⚠️ Exception with $gen: $_"
+              Remove-Item -Recurse -Force "C:\luminousminer\build\*" -ErrorAction SilentlyContinue
+            }
           }
 
-          Write-Host "=== CMake stdout (last 30 lines) ==="
-          Get-Content "cmake_stdout.txt" -Tail 30 | Write-Host
-          Write-Host "=== CMake stderr (last 30 lines) ==="
-          Get-Content "cmake_stderr.txt" -Tail 30 | Write-Host
+          if (-not $configured) {
+            # Last resort: Ninja generator (uses MSVC from environment)
+            Write-Host "=== Trying Ninja generator ==="
+            & cmake -G Ninja "C:\luminousminer" @cmakeArgs 2>&1 | Tee-Object -FilePath "cmake_output.txt"
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ CMake configure succeeded with Ninja"
+              $configured = $true
+            }
+          }
 
-          if ($proc.ExitCode -ne 0) {
-            Write-Host "❌ CMake configure failed with both VS 2022 and VS 2025"
+          if (-not $configured) {
+            Write-Host "❌ All CMake generators failed"
+            Get-Content "cmake_output.txt" -Tail 30 | Write-Host
             exit 1
           }
-          Write-Host "✅ CMake configure succeeded with generator: $generator"
 
-      # ─── 11. Build with MSBuild ───
-      - name: Build 4i-miner.exe (MSBuild)
-        shell: cmd
+      # ─── 11. Build with MSBuild or Ninja ───
+      - name: Build 4i-miner.exe
+        shell: powershell
         run: |
-          cd C:\luminousminer\build
-          msbuild miner.sln /p:Configuration=Release /p:Platform=x64 /m:4
+          Set-Location "C:\luminousminer\build"
+          # If .sln exists → use MSBuild; if build.ninja exists → use Ninja
+          if (Test-Path "miner.sln") {
+            Write-Host "Building with MSBuild..."
+            & msbuild miner.sln /p:Configuration=Release /p:Platform=x64 /m:4
+          } elseif (Test-Path "build.ninja") {
+            Write-Host "Building with Ninja..."
+            & cmake --build . --config Release -- -j4
+          } else {
+            Write-Host "❌ No build system found (no .sln or build.ninja)"
+            exit 1
+          }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Build failed (exit $LASTEXITCODE)"
+            exit 1
+          }
+          Write-Host "✅ Build complete"
 
       # ─── 12. Stage release (4i-miner.exe + kernels + web-ui) ───
       - name: Stage release
