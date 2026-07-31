@@ -210,89 +210,88 @@ jobs:
           fi
 
       # ─── 10. Configure cmake ───
-      # windows-latest has VS 2022 (17) AND VS 2025 (18) Preview.
-      # Try both generators. Use PowerShell call operator (&) NOT Start-Process
-      # (Start-Process splits "Visual Studio 17 2022" into separate args).
+      # Use bash (Git Bash) NOT powershell — PowerShell has $_ parsing bugs.
+      # Try VS 2022 → VS 2025 → Ninja generators.
       - name: Configure CMake
-        shell: powershell
+        shell: bash
         run: |
-          if (Test-Path "C:\luminousminer\build") { Remove-Item -Recurse -Force "C:\luminousminer\build" }
-          New-Item -ItemType Directory -Path "C:\luminousminer\build" -Force | Out-Null
-          Set-Location "C:\luminousminer\build"
+          set -e
+          rm -rf /c/luminousminer/build
+          mkdir -p /c/luminousminer/build
+          cd /c/luminousminer/build
 
-          $cmakeArgs = @(
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DBUILD_NVIDIA=OFF",
-            "-DBUILD_AMD=ON",
-            "-DBUILD_CPU=OFF",
-            "-DBUILD_EXE_MINER=ON",
-            "-DBUILD_EXE_UNIT_TEST=OFF",
-            "-DBUILD_EXE_BENCHMARK=OFF",
-            "-DUSE_VCPKG=OFF",
-            "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
-            "-DVCPKG_TARGET_TRIPLET=x64-windows"
-          )
+          CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_NVIDIA=OFF \
+            -DBUILD_AMD=ON \
+            -DBUILD_CPU=OFF \
+            -DBUILD_EXE_MINER=ON \
+            -DBUILD_EXE_UNIT_TEST=OFF \
+            -DBUILD_EXE_BENCHMARK=OFF \
+            -DUSE_VCPKG=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-windows"
 
-          # Try VS 2022 first, then VS 2025
-          $generators = @("Visual Studio 17 2022", "Visual Studio 18 2025")
-          $configured = $false
+          CONFIGURED=0
 
-          foreach ($gen in $generators) {
-            Write-Host "=== Trying generator: $gen ==="
-            try {
-              & cmake -G $gen -A x64 "C:\luminousminer" @cmakeArgs 2>&1 | Tee-Object -FilePath "cmake_output.txt"
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ CMake configure succeeded with: $gen"
-                $configured = $true
-                break
-              } else {
-                Write-Host "⚠️ Generator $gen failed (exit $LASTEXITCODE)"
-                # Clean build dir for next attempt
-                Remove-Item -Recurse -Force "C:\luminousminer\build\*" -ErrorAction SilentlyContinue
-              }
-            } catch {
-              Write-Host "⚠️ Exception with $gen: $_"
-              Remove-Item -Recurse -Force "C:\luminousminer\build\*" -ErrorAction SilentlyContinue
-            }
-          }
+          # Try VS 2022
+          echo "=== Trying: Visual Studio 17 2022 ==="
+          cmake -G "Visual Studio 17 2022" -A x64 /c/luminousminer $CMAKE_ARGS 2>&1 | tail -20 || true
+          if [ -f miner.sln ]; then
+            echo "SUCCESS: VS 2022"
+            CONFIGURED=1
+          else
+            echo "FAILED: VS 2022"
+            rm -rf /c/luminousminer/build/*
+          fi
 
-          if (-not $configured) {
-            # Last resort: Ninja generator (uses MSVC from environment)
-            Write-Host "=== Trying Ninja generator ==="
-            & cmake -G Ninja "C:\luminousminer" @cmakeArgs 2>&1 | Tee-Object -FilePath "cmake_output.txt"
-            if ($LASTEXITCODE -eq 0) {
-              Write-Host "✅ CMake configure succeeded with Ninja"
-              $configured = $true
-            }
-          }
+          # Try VS 2025
+          if [ $CONFIGURED -eq 0 ]; then
+            echo "=== Trying: Visual Studio 18 2025 ==="
+            cmake -G "Visual Studio 18 2025" -A x64 /c/luminousminer $CMAKE_ARGS 2>&1 | tail -20 || true
+            if [ -f miner.sln ]; then
+              echo "SUCCESS: VS 2025"
+              CONFIGURED=1
+            else
+              echo "FAILED: VS 2025"
+              rm -rf /c/luminousminer/build/*
+            fi
+          fi
 
-          if (-not $configured) {
-            Write-Host "❌ All CMake generators failed"
-            Get-Content "cmake_output.txt" -Tail 30 | Write-Host
+          # Try Ninja (last resort)
+          if [ $CONFIGURED -eq 0 ]; then
+            echo "=== Trying: Ninja ==="
+            cmake -G Ninja /c/luminousminer $CMAKE_ARGS 2>&1 | tail -20 || true
+            if [ -f build.ninja ] || [ -f miner.sln ]; then
+              echo "SUCCESS: Ninja"
+              CONFIGURED=1
+            else
+              echo "FAILED: Ninja"
+            fi
+          fi
+
+          if [ $CONFIGURED -eq 0 ]; then
+            echo "ERROR: All CMake generators failed"
             exit 1
-          }
+          fi
+          echo "CMake configure done"
 
       # ─── 11. Build with MSBuild or Ninja ───
       - name: Build 4i-miner.exe
-        shell: powershell
+        shell: bash
         run: |
-          Set-Location "C:\luminousminer\build"
-          # If .sln exists → use MSBuild; if build.ninja exists → use Ninja
-          if (Test-Path "miner.sln") {
-            Write-Host "Building with MSBuild..."
-            & msbuild miner.sln /p:Configuration=Release /p:Platform=x64 /m:4
-          } elseif (Test-Path "build.ninja") {
-            Write-Host "Building with Ninja..."
-            & cmake --build . --config Release -- -j4
-          } else {
-            Write-Host "❌ No build system found (no .sln or build.ninja)"
+          set -e
+          cd /c/luminousminer/build
+          if [ -f miner.sln ]; then
+            echo "Building with MSBuild..."
+            "C:/Program Files/Microsoft Visual Studio/18/Enterprise/MSBuild/Current/Bin/MSBuild.exe" miner.sln /p:Configuration=Release /p:Platform=x64 /m:4 2>&1 | tail -30
+          elif [ -f build.ninja ]; then
+            echo "Building with Ninja..."
+            cmake --build . --config Release -- -j4 2>&1 | tail -30
+          else
+            echo "ERROR: No build system found"
             exit 1
-          }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ Build failed (exit $LASTEXITCODE)"
-            exit 1
-          }
-          Write-Host "✅ Build complete"
+          fi
+          echo "Build complete"
 
       # ─── 12. Stage release (4i-miner.exe + kernels + web-ui) ───
       - name: Stage release
