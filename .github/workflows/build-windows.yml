@@ -68,7 +68,6 @@ jobs:
             'boost-filesystem',
             'boost-program-options',
             'boost-serialization',
-            'boost-json',
             'boost-atomic',
             'boost-container',
             'boost-date-time',
@@ -76,6 +75,8 @@ jobs:
             'openssl',
             'curl'
           )
+          # NOTE: boost-json REMOVED — replaced with nlohmann/json (header-only)
+          # to fix C2491 dllimport error on Windows MSVC.
           & vcpkg.exe install $packages --triplet x64-windows
           & vcpkg.exe integrate install
 
@@ -209,20 +210,11 @@ jobs:
             sed -i 's|add_subdirectory(stratum)|add_subdirectory(stratum)\nadd_subdirectory(tui)|' "$LM_DIR/sources/CMakeLists.txt"
           fi
 
-          # 🆕 Fix Boost.JSON dllimport error on Windows MSVC:
-          # error C2491: 'boost::json::array::empty_': definition of dllimport
-          # static data member not allowed.
-          #
-          # Root cause: vcpkg builds boost-json as shared DLL → CMake imported
-          # targets add -DBOOST_JSON_DYN_LINK=1 → MSVC dllimport on static
-          # data members → C2491.
-          #
-          # Fix: #undef BOOST_JSON_DYN_LINK in api.cpp BEFORE boost/json.hpp
-          # is included. This makes Boost.Json use inline (header-only) impl
-          # instead of dllimport. No need to patch boost.cmake (vcpkg config
-          # overrides it anyway).
-          sed -i 's|#include <boost/json.hpp>|#undef BOOST_JSON_DYN_LINK\n#include <boost/json.hpp>|' "$LM_DIR/sources/api/api.cpp"
-          echo "Patched api.cpp: #undef BOOST_JSON_DYN_LINK before boost/json.hpp"
+          # 🆕 v1.3: nlohmann/json replaces boost::json — no DYN_LINK fix needed.
+          # Copy nlohmann/json.hpp to luminousminer/sources/include/nlohmann/
+          mkdir -p "$LM_DIR/sources/include/nlohmann"
+          cp "$SRC_4I/include/nlohmann/json.hpp" "$LM_DIR/sources/include/nlohmann/json.hpp"
+          echo "Copied nlohmann/json.hpp to $LM_DIR/sources/include/nlohmann/"
 
       # ─── 10. Configure cmake ───
       # Use bash (Git Bash) NOT powershell — PowerShell has $_ parsing bugs.
