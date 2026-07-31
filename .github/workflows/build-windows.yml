@@ -212,10 +212,11 @@ jobs:
           fi
 
           # 🆕 v1.3: nlohmann/json replaces boost::json — no DYN_LINK fix needed.
-          # Copy nlohmann/json.hpp to luminousminer/sources/include/nlohmann/
-          mkdir -p "$LM_DIR/sources/include/nlohmann"
-          cp "$SRC_4I/include/nlohmann/json.hpp" "$LM_DIR/sources/include/nlohmann/json.hpp"
-          echo "Copied nlohmann/json.hpp to $LM_DIR/sources/include/nlohmann/"
+          # Copy nlohmann/json.hpp to luminousminer/sources/nlohmann/ (NOT include/nlohmann/)
+          # because CMake already adds -I sources/ as include path.
+          mkdir -p "$LM_DIR/sources/nlohmann"
+          cp "$SRC_4I/include/nlohmann/json.hpp" "$LM_DIR/sources/nlohmann/json.hpp"
+          echo "Copied nlohmann/json.hpp to $LM_DIR/sources/nlohmann/"
 
       # ─── 10. Configure cmake ───
       # Use bash (Git Bash) NOT powershell — PowerShell has $_ parsing bugs.
