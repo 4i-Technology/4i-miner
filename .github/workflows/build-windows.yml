@@ -229,7 +229,9 @@ jobs:
             -DBUILD_EXE_BENCHMARK=OFF \
             -DUSE_VCPKG=OFF \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_TARGET_TRIPLET=x64-windows"
+            -DVCPKG_TARGET_TRIPLET=x64-windows \
+            -DCMAKE_CXX_FLAGS=/DBOOST_JSON_STATIC \
+            -DCMAKE_CXX_FLAGS_RELEASE=/DBOOST_JSON_STATIC"
 
           CONFIGURED=0
 
