@@ -212,22 +212,17 @@ jobs:
           # 🆕 Fix Boost.JSON dllimport error on Windows MSVC:
           # error C2491: 'boost::json::array::empty_': definition of dllimport
           # static data member not allowed.
-          # Fix: patch boost.cmake to remove BOOST_JSON_DYN_LINK definition.
-          # vcpkg builds Boost.Json as shared DLL → boost.cmake adds DYN_LINK →
-          # MSVC can't dllimport static data members → C2491.
-          # Remove BOOST_JSON_DYN_LINK so Boost.Json headers use inline (not dllimport).
-          if ! grep -q "4i-Miner patch: remove BOOST_JSON_DYN_LINK" "$LM_DIR/cmake/deps/system/boost.cmake"; then
-            # Only replace actual defines, not comments
-            sed -i 's/-DBOOST_JSON_DYN_LINK/-DBOOST_JSON_NO_DYN_LINK/g' "$LM_DIR/cmake/deps/system/boost.cmake"
-            sed -i 's/set(Boost_USE_STATIC_LIBS      OFF)/set(Boost_USE_STATIC_LIBS      OFF)\n# 4i-Miner patch: remove BOOST_JSON_DYN_LINK/' "$LM_DIR/cmake/deps/system/boost.cmake"
-            echo "Patched boost.cmake: BOOST_JSON_DYN_LINK → BOOST_JSON_NO_DYN_LINK"
-          fi
-
-          # Also add BOOST_JSON_STATIC to CMakeLists.txt (belt + suspenders)
-          if ! grep -q "BOOST_JSON_STATIC" "$LM_DIR/CMakeLists.txt"; then
-            sed -i '/^project(/a add_compile_definitions(BOOST_JSON_STATIC)' "$LM_DIR/CMakeLists.txt"
-            echo "Added BOOST_JSON_STATIC to CMakeLists.txt"
-          fi
+          #
+          # Root cause: vcpkg builds boost-json as shared DLL → CMake imported
+          # targets add -DBOOST_JSON_DYN_LINK=1 → MSVC dllimport on static
+          # data members → C2491.
+          #
+          # Fix: #undef BOOST_JSON_DYN_LINK in api.cpp BEFORE boost/json.hpp
+          # is included. This makes Boost.Json use inline (header-only) impl
+          # instead of dllimport. No need to patch boost.cmake (vcpkg config
+          # overrides it anyway).
+          sed -i 's|#include <boost/json.hpp>|#undef BOOST_JSON_DYN_LINK\n#include <boost/json.hpp>|' "$LM_DIR/sources/api/api.cpp"
+          echo "Patched api.cpp: #undef BOOST_JSON_DYN_LINK before boost/json.hpp"
 
       # ─── 10. Configure cmake ───
       # Use bash (Git Bash) NOT powershell — PowerShell has $_ parsing bugs.
