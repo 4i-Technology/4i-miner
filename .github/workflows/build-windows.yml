@@ -76,7 +76,7 @@ jobs:
             'openssl',
             'curl'
           )
-          & vcpkg.exe install $packages --triplet x64-windows
+          & vcpkg.exe install $packages --triplet x64-windows-static
           & vcpkg.exe integrate install
 
       # ─── 6. Download solo-miner source from Gitea (private repo) ───
@@ -240,7 +240,7 @@ jobs:
             -DBUILD_EXE_BENCHMARK=OFF \
             -DUSE_VCPKG=OFF \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DVCPKG_TARGET_TRIPLET=x64-windows"
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static"
 
           CONFIGURED=0
 
