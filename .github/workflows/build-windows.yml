@@ -187,6 +187,7 @@ jobs:
         shell: bash
         run: |
           LM_DIR="C:/luminousminer"
+          SRC_4I="solo-miner/4i-miner/sources"
           cat > "$LM_DIR/sources/tui/CMakeLists.txt" << 'EOF'
           file(GLOB HEADERS "*.hpp")
           file(GLOB SOURCES "*.cpp")
