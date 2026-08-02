@@ -313,13 +313,23 @@ jobs:
           New-Item -ItemType Directory -Path "$stage\kernels\autolykos" -Force | Out-Null
           New-Item -ItemType Directory -Path "$stage\web-ui" -Force | Out-Null
 
-          # Binary
-          $exePath = Get-ChildItem -Path "C:\luminousminer\build" -Recurse -Filter "miner.exe" | Select-Object -First 1
+          # Binary — search in ALL of C:\luminousminer (build/ OR bin/)
+          $exePath = Get-ChildItem -Path "C:\luminousminer" -Recurse -Filter "miner.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exePath) {
             Copy-Item $exePath.FullName "$stage\bin\4i-miner.exe"
             Write-Host "✅ Binary: $($exePath.FullName)"
+            # Also copy any DLLs from the same directory (vcpkg dynamic deps)
+            $dllDir = $exePath.DirectoryName
+            $dlls = Get-ChildItem -Path $dllDir -Filter "*.dll" -ErrorAction SilentlyContinue
+            foreach ($dll in $dlls) {
+              Copy-Item $dll.FullName "$stage\bin\"
+              Write-Host "  DLL: $($dll.Name)"
+            }
           } else {
-            Write-Host "❌ miner.exe not found!"
+            Write-Host "❌ miner.exe not found anywhere in C:\luminousminer!"
+            # List what IS there for debugging
+            Get-ChildItem -Path "C:\luminousminer\bin" -ErrorAction SilentlyContinue | Format-Table Name, Length
+            Get-ChildItem -Path "C:\luminousminer\build" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Format-Table FullName, Length
             exit 1
           }
 
