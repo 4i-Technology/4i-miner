@@ -55,7 +55,7 @@ We are building the ultimate community Hashrate Leaderboard!
 2. Take a screenshot of the TUI or Web Dashboard.
 3. Post it in our Reddit/Discord with your GPU model!
 
-Let's prove that optimized open-source software can beat corporate miners.
+Let's prove that independent, community-driven software can outperform legacy corporate miners.
 
 ---
 *Built by a solo developer. Powered by 4i-Technology.*
