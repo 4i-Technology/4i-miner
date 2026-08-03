@@ -1,7 +1,7 @@
 # 4i-MINER [ Master of Miners ]
 > **"Serious crypto tools for adults. 36+ only."**
 
-4i-Miner is a next-generation OpenCL miner for Ergo (Autolykos v2). Built with an AI-driven optimization core, we took open-source kernels and applied deep memory coalescing and DAG read optimizations, outperforming standard proprietary software by up to 70%.
+4i-Miner is a heavily optimized OpenCL miner for Ergo (Autolykos v2). By taking open-source kernels and applying aggressive memory coalescing and DAG read optimizations, it outperforms standard proprietary software by up to 70%.
 
 No config files. No command-line flags. Just run the executable and answer 4 simple questions.
 
