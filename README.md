@@ -1,7 +1,7 @@
 # 4i-MINER [ Master of Miners ]
 > **"Serious crypto tools for adults. 36+ only."**
 
-4i-Miner is a next-generation OpenCL miner built with an AI-driven optimization core. We took open-source kernels and applied deep memory coalescing and DAG read optimizations, outperforming standard proprietary software by up to 70%.
+4i-Miner is a next-generation OpenCL miner for Ergo (Autolykos v2). Built with an AI-driven optimization core, we took open-source kernels and applied deep memory coalescing and DAG read optimizations, outperforming standard proprietary software by up to 70%.
 
 No config files. No command-line flags. Just run the executable and answer 4 simple questions.
 
@@ -22,7 +22,7 @@ docker run -it --device=/dev/dri -p 8080:8080 makartwebstudio/4i-miner:latest
 
 ### Option 3: Linux (Binary)
 ```bash
-wget https://github.com/4i-Technology/4i-miner/releases/download/v1.3/4i-miner
+wget https://github.com/4i-Technology/4i-miner/releases/download/v1.1/4i-miner
 chmod +x 4i-miner
 sudo apt-get update && sudo apt-get install -y ocl-icd-libopencl1 libboost-all-dev
 ./4i-miner
@@ -42,6 +42,7 @@ We tested 4i-Miner against the industry standard (lolMiner). The results speak f
 
 ## ✨ Why 4i-Miner?
 
+*   **Algorithm Support:** Ergo (Autolykos v2). More algorithms (Blake3/ALPH, KawPow/RVN) coming soon.
 *   **Interactive TUI:** A beautiful terminal interface that lets you choose from top pools, shows your hashrate, temperature, and **Unit Economics** (calculates your Net Profit after electricity costs in real-time).
 *   **Web Dashboard:** Open `http://localhost:8080` in your browser to see a premium web UI with live charts and shareable stats.
 *   **OpenCL JIT Compilation:** Works natively on both AMD and NVIDIA out of the box. No separate binaries needed.
