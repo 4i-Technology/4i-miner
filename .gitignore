@@ -12,3 +12,40 @@ bin/
 build/
 *.o
 *.tmp
+
+# Internal context files — NEVER commit to public repo
+SESSION-CONTEXT.md
+CONTEXT-4I-MINER.md
+WORKLOG.md
+WORKLOG_BURAN24.md
+BUILD-WINDOWS.md
+TECHNICAL_SPECIFICATION.md
+MESSAGE_FOR_TOMORROW.md
+VICTORY-LOG.md
+CURRENT_STATE.md
+CONTEXT_RESTORE.md
+OPENCL_AUDIT.md
+AB_TEST_REPORT.md
+AB_TEST_V51_REPORT.md
+BURAN24_TZ.md
+BURAN26_FINAL_REPORT.md
+MARKETING_TECH_BASE.md
+RTX2000_ADA_BUILD_REPORT.md
+RTX_A2000_BUILD_REPORT.md
+BATTLE_TEST_FINAL_REPORT.md
+CHANGELOG.md
+CONTEXT_FOR_NEW_REPO.md
+
+# Source code — kept in private Gitea repo only
+sources/
+src/
+*.cpp
+*.hpp
+*.cl
+*.h
+
+# Config / secrets
+config.json
+.env*
+*.secret
+keys/
