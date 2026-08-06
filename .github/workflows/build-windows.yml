@@ -230,7 +230,7 @@ jobs:
           cd /c/4i-miner/build
 
           CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_NVIDIA=ON \
+            -DBUILD_NVIDIA=OFF \
             -DBUILD_AMD=ON \
             -DBUILD_CPU=OFF \
             -DBUILD_EXE_MINER=ON \
