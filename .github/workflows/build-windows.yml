@@ -23,6 +23,16 @@ jobs:
       - name: Checkout 4i-miner repo
         uses: actions/checkout@v4
 
+      # ─── 1b. Install CUDA Toolkit (native NVIDIA support — BUILD_NVIDIA=ON) ───
+      # Without CUDA, luminousminer's NVIDIA backend cannot compile → 0.00 MH/s on RTX GPUs.
+      # Jimver/cuda-toolkit installs nvcc + cudart via network installer (~1-2 min).
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.21
+        with:
+          cuda: '12.4.0'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart"]'
+
       # ─── 2. Setup MSVC + Windows SDK ───
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -230,13 +240,14 @@ jobs:
           cd /c/4i-miner/build
 
           CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_NVIDIA=OFF \
+            -DBUILD_NVIDIA=ON \
             -DBUILD_AMD=ON \
             -DBUILD_CPU=OFF \
             -DBUILD_EXE_MINER=ON \
             -DBUILD_EXE_UNIT_TEST=OFF \
             -DBUILD_EXE_BENCHMARK=OFF \
             -DUSE_VCPKG=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES=75;86;89;90 \
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DVCPKG_TARGET_TRIPLET=x64-windows"
 
