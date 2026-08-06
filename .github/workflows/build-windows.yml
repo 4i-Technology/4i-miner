@@ -105,20 +105,20 @@ jobs:
           echo "✅ solo-miner source extracted"
           ls solo-miner/4i-miner/
 
-      # ─── 7. Clone upstream luminousminer from GitHub (public) ───
-      - name: Clone upstream luminousminer
+      # ─── 7. Clone upstream base source from GitHub (public) ───
+      - name: Clone upstream base source
         shell: bash
         run: |
           set -e
-          git clone --depth 1 https://github.com/luminousmining/miner.git C:/luminousminer
-          ls C:/luminousminer/sources/ | head -10
+          git clone --depth 1 https://github.com/luminousmining/miner.git C:/4i-miner
+          ls C:/4i-miner/sources/ | head -10
 
       # ─── 8. Apply 4i-Miner patches over upstream ───
       - name: Apply 4i-Miner patches
         shell: bash
         run: |
           set -e
-          LM_DIR="C:/luminousminer"
+          LM_DIR="C:/4i-miner"
           SRC_4I="solo-miner/4i-miner/sources"
 
           # 3a. Patch boost.cmake — relax Boost version (vcpkg ships 1.84)
@@ -186,7 +186,7 @@ jobs:
       - name: Create tui/CMakeLists.txt + add_subdirectory
         shell: bash
         run: |
-          LM_DIR="C:/luminousminer"
+          LM_DIR="C:/4i-miner"
           SRC_4I="solo-miner/4i-miner/sources"
           cat > "$LM_DIR/sources/tui/CMakeLists.txt" << 'EOF'
           file(GLOB HEADERS "*.hpp")
@@ -212,7 +212,7 @@ jobs:
           fi
 
           # 🆕 v1.3: nlohmann/json replaces boost::json — no DYN_LINK fix needed.
-          # Copy nlohmann/json.hpp to luminousminer/sources/nlohmann/ (NOT include/nlohmann/)
+          # Copy nlohmann/json.hpp to 4i-miner/sources/nlohmann/ (NOT include/nlohmann/)
           # because CMake already adds -I sources/ as include path.
           mkdir -p "$LM_DIR/sources/nlohmann"
           cp "$SRC_4I/include/nlohmann/json.hpp" "$LM_DIR/sources/nlohmann/json.hpp"
@@ -225,12 +225,12 @@ jobs:
         shell: bash
         run: |
           set -e
-          rm -rf /c/luminousminer/build
-          mkdir -p /c/luminousminer/build
-          cd /c/luminousminer/build
+          rm -rf /c/4i-miner/build
+          mkdir -p /c/4i-miner/build
+          cd /c/4i-miner/build
 
           CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_NVIDIA=OFF \
+            -DBUILD_NVIDIA=ON \
             -DBUILD_AMD=ON \
             -DBUILD_CPU=OFF \
             -DBUILD_EXE_MINER=ON \
@@ -244,32 +244,32 @@ jobs:
 
           # Try VS 2022
           echo "=== Trying: Visual Studio 17 2022 ==="
-          cmake -G "Visual Studio 17 2022" -A x64 /c/luminousminer $CMAKE_ARGS 2>&1 | tail -20 || true
+          cmake -G "Visual Studio 17 2022" -A x64 /c/4i-miner $CMAKE_ARGS 2>&1 | tail -20 || true
           if [ -f miner.sln ]; then
             echo "SUCCESS: VS 2022"
             CONFIGURED=1
           else
             echo "FAILED: VS 2022"
-            rm -rf /c/luminousminer/build/*
+            rm -rf /c/4i-miner/build/*
           fi
 
           # Try VS 2025
           if [ $CONFIGURED -eq 0 ]; then
             echo "=== Trying: Visual Studio 18 2025 ==="
-            cmake -G "Visual Studio 18 2025" -A x64 /c/luminousminer $CMAKE_ARGS 2>&1 | tail -20 || true
+            cmake -G "Visual Studio 18 2025" -A x64 /c/4i-miner $CMAKE_ARGS 2>&1 | tail -20 || true
             if [ -f miner.sln ]; then
               echo "SUCCESS: VS 2025"
               CONFIGURED=1
             else
               echo "FAILED: VS 2025"
-              rm -rf /c/luminousminer/build/*
+              rm -rf /c/4i-miner/build/*
             fi
           fi
 
           # Try Ninja (last resort)
           if [ $CONFIGURED -eq 0 ]; then
             echo "=== Trying: Ninja ==="
-            cmake -G Ninja /c/luminousminer $CMAKE_ARGS 2>&1 | tail -20 || true
+            cmake -G Ninja /c/4i-miner $CMAKE_ARGS 2>&1 | tail -20 || true
             if [ -f build.ninja ] || [ -f miner.sln ]; then
               echo "SUCCESS: Ninja"
               CONFIGURED=1
@@ -289,7 +289,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          cd /c/luminousminer/build
+          cd /c/4i-miner/build
           if [ -f miner.sln ]; then
             echo "Building with MSBuild..."
             "C:/Program Files/Microsoft Visual Studio/18/Enterprise/MSBuild/Current/Bin/MSBuild.exe" miner.sln /p:Configuration=Release /p:Platform=x64 /m:4 2>&1 | tail -30
@@ -313,8 +313,8 @@ jobs:
           New-Item -ItemType Directory -Path "$stage\kernels\autolykos" -Force | Out-Null
           New-Item -ItemType Directory -Path "$stage\web-ui" -Force | Out-Null
 
-          # Binary — search in ALL of C:\luminousminer (build/ OR bin/)
-          $exePath = Get-ChildItem -Path "C:\luminousminer" -Recurse -Filter "miner.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Binary — search in ALL of C:\4i-miner (build/ OR bin/)
+          $exePath = Get-ChildItem -Path "C:\4i-miner" -Recurse -Filter "miner.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exePath) {
             Copy-Item $exePath.FullName "$stage\bin\4i-miner.exe"
             Write-Host "✅ Binary: $($exePath.FullName)"
@@ -326,20 +326,20 @@ jobs:
               Write-Host "  DLL: $($dll.Name)"
             }
           } else {
-            Write-Host "❌ miner.exe not found anywhere in C:\luminousminer!"
+            Write-Host "❌ miner.exe not found anywhere in C:\4i-miner!"
             # List what IS there for debugging
-            Get-ChildItem -Path "C:\luminousminer\bin" -ErrorAction SilentlyContinue | Format-Table Name, Length
-            Get-ChildItem -Path "C:\luminousminer\build" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Format-Table FullName, Length
+            Get-ChildItem -Path "C:\4i-miner\bin" -ErrorAction SilentlyContinue | Format-Table Name, Length
+            Get-ChildItem -Path "C:\4i-miner\build" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Format-Table FullName, Length
             exit 1
           }
 
           # Kernels
-          Copy-Item "C:\luminousminer\build\kernel\common\*" "$stage\kernels\common\" -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "C:\luminousminer\build\kernel\crypto\*" "$stage\kernels\crypto\" -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "C:\luminousminer\build\kernel\autolykos\*" "$stage\kernels\autolykos\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "C:\4i-miner\build\kernel\common\*" "$stage\kernels\common\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "C:\4i-miner\build\kernel\crypto\*" "$stage\kernels\crypto\" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "C:\4i-miner\build\kernel\autolykos\*" "$stage\kernels\autolykos\" -Recurse -ErrorAction SilentlyContinue
 
           # Web UI
-          Copy-Item "C:\luminousminer\web-ui\*" "$stage\web-ui\" -Recurse
+          Copy-Item "C:\4i-miner\web-ui\*" "$stage\web-ui\" -Recurse
 
           # README
           Copy-Item "README.md" "$stage\"
