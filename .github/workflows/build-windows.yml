@@ -2,10 +2,14 @@ name: Build Windows .exe
 
 # Триггеры:
 #   1. При публикации нового Release (тег v1.*) — собирает .exe и крепит к релизу
-#   2. Ручной запуск (workflow_dispatch) — для тестирования сборки
+#   2. Push тегов v* — fallback: PAT-created releases не триггерят release event
+#   3. Ручной запуск (workflow_dispatch) — для тестирования сборки
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -375,18 +379,24 @@ jobs:
           path: C:\4i-miner-windows-x64.zip
           retention-days: 30
 
-      # ─── 15. Attach to GitHub Release (if triggered by release) ───
+      # ─── 15. Attach to GitHub Release (release OR push:tags event) ───
       - name: Attach ZIP to Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          RELEASE_TAG="${{ github.event.release.tag_name }}"
-          echo "Attaching ZIP to release: $RELEASE_TAG"
-          gh release upload "$RELEASE_TAG" "C:/4i-miner-windows-x64.zip" --clobber
-          echo "✅ Attached to release $RELEASE_TAG"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            RELEASE_TAG="${{ github.event.release.tag_name }}"
+          else
+            # push: tags — extract tag from GITHUB_REF (refs/tags/v1.6 → v1.6)
+            RELEASE_TAG="${GITHUB_REF##*/}"
+          fi
+          echo "Attaching ZIP to release: $RELEASE_TAG (event: ${{ github.event_name }})"
+          gh release upload "$RELEASE_TAG" "C:/4i-miner-windows-x64.zip" --clobber || \
+            echo "⚠️ Release $RELEASE_TAG not found — skipping attach (artifact still uploaded above)"
+          echo "✅ Done with release $RELEASE_TAG"
 
       # ─── 16. Manual tag attach (workflow_dispatch with tag input) ───
       - name: Attach ZIP to manual tag
